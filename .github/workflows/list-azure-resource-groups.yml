@@ -29,7 +29,32 @@ jobs:
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          allow-no-subscriptions: true
+
+      - name: Select Azure subscription
+        id: set-azure-subscription
+        env:
+          INPUT_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          set -euo pipefail
+
+          if [ -n "${INPUT_SUBSCRIPTION_ID}" ]; then
+            SUBSCRIPTION_ID="${INPUT_SUBSCRIPTION_ID}"
+          else
+            echo "No subscription id provided via secrets. Attempting to discover the first accessible subscription via Azure CLI." >&2
+            SUBSCRIPTION_ID="$(az account list --query "[0].id" -o tsv)"
+            if [ -z "${SUBSCRIPTION_ID}" ]; then
+              echo "::error::Unable to determine an Azure subscription for the logged-in identity." >&2
+              exit 1
+            fi
+          fi
+
+          echo "::add-mask::${SUBSCRIPTION_ID}"
+          az account set --subscription "${SUBSCRIPTION_ID}"
+          {
+            echo "ARM_SUBSCRIPTION_ID=${SUBSCRIPTION_ID}"
+            echo "ARM_USE_OIDC=true"
+          } >> "${GITHUB_ENV}"
 
       - name: Initialize Terraform
         run: terraform init
